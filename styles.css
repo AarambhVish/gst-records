@@ -141,6 +141,34 @@ p,
   gap: 10px;
 }
 
+.tabbar {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.tab-button {
+  min-height: 36px;
+  border-color: #c8d8df;
+  background: #fbfdff;
+}
+
+.tab-button.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #ffffff;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 .fy-pill {
   min-width: 112px;
   padding: 9px 12px;

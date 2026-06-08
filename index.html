@@ -30,7 +30,14 @@
             <button id="logoutButton">Logout</button>
           </div>
         </div>
+        <nav class="tabbar" aria-label="GST app sections">
+          <button class="tab-button active" type="button" data-tab="records">GST Records</button>
+          <button class="tab-button" type="button" data-tab="lecture">Lecture Sync</button>
+        </nav>
+      </section>
 
+      <section class="tab-panel active" id="recordsTab">
+      <section class="entry-panel">
         <label class="message-label" for="messageBox">Message</label>
         <textarea id="messageBox" spellcheck="false" placeholder="Full Name: Dilip Vishwakarma&#10;March 2026&#10;Lecture Fees : Rs 81000&#10;&#10;or paste bank receipt:&#10;Veranda credited Rs 87480 for March 2026"></textarea>
 
@@ -72,42 +79,6 @@
         </article>
       </section>
 
-      <section class="entry-panel sheet-import-panel">
-        <div class="panel-head">
-          <div>
-            <h2>Lecture Sheet Import</h2>
-            <p>Sync lecture hours from the Google Form response sheet and convert them into monthly GST billing records.</p>
-          </div>
-        </div>
-        <div class="sheet-import-grid">
-          <label class="wide">
-            <span>Google Sheet link</span>
-            <input id="lectureSheetUrl" type="url" value="https://docs.google.com/spreadsheets/d/1cUqu5dWU3xtcwMwH7Y4ZiouWfCFVor4GtBjv3c52_rM/edit?usp=drive_web&ouid=112859009405133172554">
-          </label>
-          <label>
-            <span>Sheet name</span>
-            <input id="lectureSheetName" placeholder="Optional">
-          </label>
-          <label>
-            <span>Billing rate per hour</span>
-            <input id="lectureHourlyRate" type="number" min="0" step="0.01" placeholder="e.g. 4000">
-          </label>
-          <label>
-            <span>Import name</span>
-            <input id="lectureImportName" placeholder="Defaults to login profile">
-          </label>
-          <label class="wide">
-            <span>Paste copied sheet data / CSV fallback</span>
-            <textarea id="lectureCsvPaste" rows="4" placeholder="Paste copied Google Sheet rows here if direct sync is blocked. Keep the header row included."></textarea>
-          </label>
-        </div>
-        <div class="actions">
-          <button id="syncLectureSheet" type="button">Sync Lecture Sheet</button>
-          <button id="importLectureCsv" type="button">Import Pasted CSV</button>
-          <span class="save-status" id="lectureSheetStatus">Ready</span>
-        </div>
-      </section>
-
       <section class="workspace">
         <div class="table-wrap">
           <div class="section-head">
@@ -134,6 +105,37 @@
             <tbody id="recordsBody"></tbody>
           </table>
         </div>
+      </section>
+      </section>
+
+      <section class="tab-panel" id="lectureTab">
+      <section class="entry-panel sheet-import-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Lecture Sheet Import</h2>
+            <p id="lectureSheetInfo">Sync lecture hours from the fixed Google Form response sheet for this login.</p>
+          </div>
+        </div>
+        <div class="sheet-import-grid">
+          <label>
+            <span>Billing rate per hour</span>
+            <input id="lectureHourlyRate" type="number" min="0" step="0.01" placeholder="e.g. 4000">
+          </label>
+          <label>
+            <span>Import name</span>
+            <input id="lectureImportName" placeholder="Defaults to login profile">
+          </label>
+          <label class="wide">
+            <span>Paste copied sheet data / CSV fallback</span>
+            <textarea id="lectureCsvPaste" rows="4" placeholder="Paste copied Google Sheet rows here if direct sync is blocked. Keep the header row included."></textarea>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="syncLectureSheet" type="button">Sync Lecture Sheet</button>
+          <button id="importLectureCsv" type="button">Import Pasted CSV</button>
+          <span class="save-status" id="lectureSheetStatus">Ready</span>
+        </div>
+      </section>
       </section>
     </main>
 

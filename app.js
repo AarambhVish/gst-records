@@ -2,6 +2,16 @@ const GST_RATE = 0.18;
 const TDS_RATE = 0.10;
 const SESSION_KEY = "gst-records-active-user";
 const MASTER_STORAGE_KEY = "gst-records-master-v1";
+const LECTURE_SHEETS = {
+  DV: {
+    url: "https://docs.google.com/spreadsheets/d/1cUqu5dWU3xtcwMwH7Y4ZiouWfCFVor4GtBjv3c52_rM/edit?gid=772549461#gid=772549461",
+    sheetName: "DV",
+  },
+  SG: {
+    url: "https://docs.google.com/spreadsheets/d/1rY5xl9_9TBqX5rcjx10OFm5VPB6XHuai2hEH0nmRqTo/edit?gid=2045005593#gid=2045005593",
+    sheetName: "SG",
+  },
+};
 const USERS = {
   DV: {
     id: "DV",
@@ -50,14 +60,15 @@ const downloadBackupButton = document.querySelector("#downloadBackup");
 const restoreBackupButton = document.querySelector("#restoreBackup");
 const restoreFile = document.querySelector("#restoreFile");
 const saveStatus = document.querySelector("#saveStatus");
-const lectureSheetUrl = document.querySelector("#lectureSheetUrl");
-const lectureSheetName = document.querySelector("#lectureSheetName");
+const lectureSheetInfo = document.querySelector("#lectureSheetInfo");
 const lectureHourlyRate = document.querySelector("#lectureHourlyRate");
 const lectureImportName = document.querySelector("#lectureImportName");
 const lectureCsvPaste = document.querySelector("#lectureCsvPaste");
 const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
 const importLectureCsvButton = document.querySelector("#importLectureCsv");
 const lectureSheetStatus = document.querySelector("#lectureSheetStatus");
+const tabButtons = document.querySelectorAll(".tab-button");
+const tabPanels = document.querySelectorAll(".tab-panel");
 const parsedGrid = document.querySelector("#parsedGrid");
 const parsedCard = document.querySelector("#parsedCard");
 const recordsBody = document.querySelector("#recordsBody");
@@ -90,6 +101,10 @@ let editingRecordId = null;
 
 function storageKeyFor(userId) {
   return `gst-records-v2-${userId}`;
+}
+
+function rateKeyFor(userId) {
+  return `gst-records-hourly-rate-${userId}`;
 }
 
 function loadRecords() {
@@ -594,9 +609,11 @@ function aggregateLectureMonths(lectureRows) {
 function importLectureRows(lectureRows) {
   const rate = Number(lectureHourlyRate.value);
   if (!rate) {
-    alert("Please enter billing rate per hour before importing lecture records.");
+    lectureSheetStatus.textContent = "Sync failed: enter billing rate per hour.";
+    lectureSheetStatus.className = "save-status error";
     return { added: 0, updated: 0, months: 0 };
   }
+  localStorage.setItem(rateKeyFor(activeUser.id), String(rate));
   const importName = lectureImportName.value.trim() || activeUser.name;
   let added = 0;
   let updated = 0;
@@ -759,14 +776,29 @@ function render() {
   renderRecords();
 }
 
+function switchTab(tabName) {
+  tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === tabName));
+  tabPanels.forEach((panel) => {
+    const isActive = panel.id === `${tabName}Tab`;
+    panel.classList.toggle("active", isActive);
+  });
+}
+
 function showApp(user) {
   activeUser = user;
   sessionStorage.setItem(SESSION_KEY, user.id);
   records = loadRecords();
+  lectureHourlyRate.value = localStorage.getItem(rateKeyFor(user.id)) || "";
+  lectureImportName.value = user.name;
+  const config = LECTURE_SHEETS[user.id];
+  lectureSheetInfo.textContent = `Fixed sheet for ${user.id}: ${config.sheetName}. Auto-sync runs after login.`;
+  lectureSheetStatus.textContent = "Auto-sync starting...";
+  lectureSheetStatus.className = "save-status";
   loginView.hidden = true;
   appView.hidden = false;
   render();
   verifySaved(activeUser.id, records.length);
+  window.setTimeout(syncLectureSheet, 250);
 }
 
 function showLogin() {
@@ -1057,12 +1089,15 @@ async function syncLectureSheet() {
   lectureSheetStatus.textContent = "Reading Google Sheet...";
   lectureSheetStatus.className = "save-status";
   try {
-    const lectureRows = await loadLectureSheetViaGviz(lectureSheetUrl.value, lectureSheetName.value);
+    const config = LECTURE_SHEETS[activeUser.id];
+    const lectureRows = await loadLectureSheetViaGviz(config.url, config.sheetName);
     const result = importLectureRows(lectureRows);
-    lectureSheetStatus.textContent = `Imported ${result.added}, updated ${result.updated} monthly record(s).`;
-    lectureSheetStatus.className = "save-status ok";
+    if (result.months > 0) {
+      lectureSheetStatus.textContent = `Synced ${config.sheetName}: imported ${result.added}, updated ${result.updated}.`;
+      lectureSheetStatus.className = "save-status ok";
+    }
   } catch (error) {
-    lectureSheetStatus.textContent = `Direct sync blocked: ${error.message}`;
+    lectureSheetStatus.textContent = `Sync failed: ${error.message}`;
     lectureSheetStatus.className = "save-status error";
   }
 }
@@ -1070,11 +1105,16 @@ async function syncLectureSheet() {
 function importLectureCsvPaste() {
   const lectureRows = lectureRecordsFromSheetText(lectureCsvPaste.value);
   const result = importLectureRows(lectureRows);
-  lectureSheetStatus.textContent = `Imported ${result.added}, updated ${result.updated} monthly record(s) from pasted CSV.`;
-  lectureSheetStatus.className = "save-status ok";
+  if (result.months > 0) {
+    lectureSheetStatus.textContent = `Imported ${result.added}, updated ${result.updated} monthly record(s) from pasted CSV.`;
+    lectureSheetStatus.className = "save-status ok";
+  }
 }
 
 messageBox.addEventListener("input", renderParsed);
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => switchTab(button.dataset.tab));
+});
 loginButton.addEventListener("click", login);
 loginId.addEventListener("keydown", (event) => {
   if (event.key === "Enter") login();
@@ -1093,6 +1133,9 @@ restoreFile.addEventListener("change", () => {
 });
 syncLectureSheetButton.addEventListener("click", syncLectureSheet);
 importLectureCsvButton.addEventListener("click", importLectureCsvPaste);
+lectureHourlyRate.addEventListener("change", () => {
+  if (activeUser) localStorage.setItem(rateKeyFor(activeUser.id), lectureHourlyRate.value);
+});
 recordsBody.addEventListener("change", (event) => {
   const id = event.target.dataset.id;
   if (event.target.dataset.action === "status") {

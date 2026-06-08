@@ -5,6 +5,7 @@ const MASTER_STORAGE_KEY = "gst-records-master-v1";
 const USERS = {
   DV: {
     id: "DV",
+    password: "Apple@123",
     name: "Dilip Vishwakarma",
     address: "B32 303 SCN, Thakur Complex, Kandivali-East, Mumbai 400101",
     pan: "AEEPV1448M",
@@ -13,6 +14,7 @@ const USERS = {
   },
   SG: {
     id: "SG",
+    password: "Sandesh",
     name: "SG",
     address: "",
     pan: "",
@@ -36,6 +38,7 @@ const DEFAULT_BILL_TO = {
 const loginView = document.querySelector("#loginView");
 const appView = document.querySelector("#appView");
 const loginId = document.querySelector("#loginId");
+const loginPassword = document.querySelector("#loginPassword");
 const loginButton = document.querySelector("#loginButton");
 const loginError = document.querySelector("#loginError");
 const logoutButton = document.querySelector("#logoutButton");
@@ -547,6 +550,7 @@ function showLogin() {
   activeUser = null;
   records = [];
   sessionStorage.removeItem(SESSION_KEY);
+  loginPassword.value = "";
   loginError.hidden = true;
   appView.hidden = true;
   loginView.hidden = false;
@@ -555,7 +559,7 @@ function showLogin() {
 function login() {
   const id = loginId.value.trim().toUpperCase();
   const user = USERS[id];
-  if (!user) {
+  if (!user || loginPassword.value !== user.password) {
     loginError.hidden = false;
     return;
   }
@@ -829,6 +833,9 @@ function restoreBackupFile(file) {
 messageBox.addEventListener("input", renderParsed);
 loginButton.addEventListener("click", login);
 loginId.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") login();
+});
+loginPassword.addEventListener("keydown", (event) => {
   if (event.key === "Enter") login();
 });
 logoutButton.addEventListener("click", showLogin);

@@ -50,6 +50,14 @@ const downloadBackupButton = document.querySelector("#downloadBackup");
 const restoreBackupButton = document.querySelector("#restoreBackup");
 const restoreFile = document.querySelector("#restoreFile");
 const saveStatus = document.querySelector("#saveStatus");
+const lectureSheetUrl = document.querySelector("#lectureSheetUrl");
+const lectureSheetName = document.querySelector("#lectureSheetName");
+const lectureHourlyRate = document.querySelector("#lectureHourlyRate");
+const lectureImportName = document.querySelector("#lectureImportName");
+const lectureCsvPaste = document.querySelector("#lectureCsvPaste");
+const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
+const importLectureCsvButton = document.querySelector("#importLectureCsv");
+const lectureSheetStatus = document.querySelector("#lectureSheetStatus");
 const parsedGrid = document.querySelector("#parsedGrid");
 const parsedCard = document.querySelector("#parsedCard");
 const recordsBody = document.querySelector("#recordsBody");
@@ -199,7 +207,7 @@ function uniqueRecords(list) {
 function normalizeRecords(list) {
   return list.map((record) => {
     const amount = record.source === "Bank receipt" ? record.bank : record.billing;
-    return calculateRecord({
+    const normalized = calculateRecord({
       id: record.id,
       month: record.month,
       name: record.name,
@@ -211,6 +219,8 @@ function normalizeRecords(list) {
       filingDueDate: record.filingDueDate || defaultFilingDueDate(record.month),
       createdAt: record.createdAt || new Date().toISOString(),
     });
+    normalized.source = record.source || normalized.source;
+    return normalized;
   });
 }
 
@@ -253,6 +263,163 @@ function findFirstAmount(text) {
 
   const matches = findMeaningfulAmounts(text);
   return matches.length ? Math.max(...matches) : 0;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      value += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if ((char === "," || char === "\t") && !quoted) {
+      row.push(value.trim());
+      value = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(value.trim());
+      if (row.some((cellValue) => cellValue !== "")) rows.push(row);
+      row = [];
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+  row.push(value.trim());
+  if (row.some((cellValue) => cellValue !== "")) rows.push(row);
+  return rows;
+}
+
+function normalizeHeader(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function rowLooksLikeLectureHeader(row) {
+  const joined = row.map(normalizeHeader).join("|");
+  return /lecturedate|dateofthelecture|nethours|totalhours|batch|paper/.test(joined);
+}
+
+function cellFromRow(row, headers, aliases, values) {
+  const normalizedAliases = aliases.map(normalizeHeader);
+  for (const alias of normalizedAliases) {
+    if (row[alias]) return row[alias];
+  }
+  const index = headers.findIndex((header) => normalizedAliases.includes(normalizeHeader(header)));
+  return index >= 0 ? values[index] || "" : "";
+}
+
+function normalizeLectureDate(value) {
+  if (!value) return "";
+  const clean = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+  const gvizDate = clean.match(/^Date\((\d{4}),\s*(\d{1,2}),\s*(\d{1,2})/);
+  if (gvizDate) {
+    const [, year, zeroMonth, day] = gvizDate;
+    return `${year}-${String(Number(zeroMonth) + 1).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`;
+  }
+  const parsed = new Date(clean.replaceAll("-", " "));
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function toNumber(value) {
+  const match = String(value ?? "").replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+
+function lectureHoursFromRow(row, headers, values) {
+  const netHours = toNumber(cellFromRow(row, headers, ["Net Hours", "Hours", "Total Hours"], values));
+  const netMinutes = toNumber(cellFromRow(row, headers, ["Net Minutes", "Minutes", "Total Minutes"], values));
+  if (netHours || netMinutes) return netHours + (netMinutes / 60);
+  return 0;
+}
+
+function lectureRecordsFromSheetText(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const headerIndex = rows.findIndex(rowLooksLikeLectureHeader);
+  const normalizedRows = headerIndex >= 0 ? rows.slice(headerIndex) : rows;
+  const headers = normalizedRows[0];
+  return normalizedRows.slice(1).map((values) => {
+    const row = Object.fromEntries(headers.map((header, index) => [normalizeHeader(header), values[index] || ""]));
+    const lectureDate = normalizeLectureDate(cellFromRow(row, headers, ["Date of the Lecture", "Date of Lecture", "Lecture Date", "Date"], values));
+    const includeFinance = cellFromRow(row, headers, ["Include for finance", "Finance", "Submit to finance"], values);
+    const recordType = cellFromRow(row, headers, ["Record type", "Lecture type"], values);
+    return {
+      lectureDate,
+      hours: lectureHoursFromRow(row, headers, values),
+      includeFinance,
+      recordType,
+    };
+  }).filter((record) => record.lectureDate && record.hours > 0 && !/no|extra/i.test(record.includeFinance) && !/cancel/i.test(record.recordType));
+}
+
+function sheetUrlToGviz(url, sheetName, callbackName) {
+  const id = url.match(/\/spreadsheets\/d\/([^/]+)/)?.[1] || url.match(/[?&]id=([^&]+)/)?.[1];
+  if (!id) throw new Error("Please paste a valid Google Sheet link.");
+  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : "";
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=responseHandler:${callbackName}${encodedSheet}`;
+}
+
+function gvizCellValue(cellData) {
+  if (!cellData) return "";
+  if (cellData.f !== undefined && cellData.f !== null) return cellData.f;
+  if (typeof cellData.v === "string" && cellData.v.startsWith("Date(")) return cellData.v;
+  return cellData.v ?? "";
+}
+
+function lectureRecordsFromGviz(table) {
+  const headers = (table.cols || []).map((col, index) => col.label || `Column ${index + 1}`);
+  const rows = [
+    headers,
+    ...(table.rows || []).map((row) => (row.c || []).map(gvizCellValue)),
+  ];
+  const text = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
+  return lectureRecordsFromSheetText(text);
+}
+
+function loadLectureSheetViaGviz(url, sheetName) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `gstLectureSheetCallback_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const script = document.createElement("script");
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Google Sheet did not respond. Check sharing or publish settings."));
+    }, 15000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[callbackName];
+      script.remove();
+    }
+
+    window[callbackName] = (response) => {
+      cleanup();
+      if (response?.status === "error") {
+        reject(new Error(response.errors?.[0]?.detailed_message || response.errors?.[0]?.message || "Google returned an error."));
+        return;
+      }
+      if (!response?.table?.rows) {
+        reject(new Error("No rows found in the selected sheet."));
+        return;
+      }
+      resolve(lectureRecordsFromGviz(response.table));
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Unable to load Sheet. It may still be private."));
+    };
+
+    script.src = sheetUrlToGviz(url, sheetName, callbackName);
+    document.body.appendChild(script);
+  });
 }
 
 function parseHours(text) {
@@ -406,6 +573,62 @@ function billingPeriod(dateText) {
   if (month >= 6 && month <= 8) return `Jul-Sep ${year}`;
   if (month >= 9 && month <= 11) return `Oct-Dec ${year}`;
   return `Jan-Mar ${year}`;
+}
+
+function monthEndFromIsoDate(isoDate) {
+  const date = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatDate(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
+function aggregateLectureMonths(lectureRows) {
+  const grouped = new Map();
+  for (const lecture of lectureRows) {
+    const month = monthEndFromIsoDate(lecture.lectureDate);
+    if (!month) continue;
+    grouped.set(month, (grouped.get(month) || 0) + lecture.hours);
+  }
+  return [...grouped.entries()].map(([month, hours]) => ({ month, hours }));
+}
+
+function importLectureRows(lectureRows) {
+  const rate = Number(lectureHourlyRate.value);
+  if (!rate) {
+    alert("Please enter billing rate per hour before importing lecture records.");
+    return { added: 0, updated: 0, months: 0 };
+  }
+  const importName = lectureImportName.value.trim() || activeUser.name;
+  let added = 0;
+  let updated = 0;
+
+  for (const item of aggregateLectureMonths(lectureRows)) {
+    const amount = item.hours * rate;
+    const existing = records.find((record) => record.month === item.month && record.source === "Lecture sheet");
+    const record = calculateRecord({
+      id: existing?.id || crypto.randomUUID(),
+      month: item.month,
+      name: importName,
+      hours: item.hours,
+      source: "Forward",
+      amount,
+      status: existing?.status || "Unpaid",
+      filingForm: existing?.filingForm || "GSTR-3B",
+      filingDueDate: existing?.filingDueDate || defaultFilingDueDate(item.month),
+      createdAt: existing?.createdAt || new Date().toISOString(),
+    });
+    record.source = "Lecture sheet";
+    if (existing) {
+      records = records.map((stored) => stored.id === existing.id ? record : stored);
+      updated += 1;
+    } else {
+      records.push(record);
+      added += 1;
+    }
+  }
+
+  saveRecords();
+  render();
+  return { added, updated, months: aggregateLectureMonths(lectureRows).length };
 }
 
 function defaultFilingDueDate(monthText) {
@@ -830,6 +1053,27 @@ function restoreBackupFile(file) {
   reader.readAsText(file);
 }
 
+async function syncLectureSheet() {
+  lectureSheetStatus.textContent = "Reading Google Sheet...";
+  lectureSheetStatus.className = "save-status";
+  try {
+    const lectureRows = await loadLectureSheetViaGviz(lectureSheetUrl.value, lectureSheetName.value);
+    const result = importLectureRows(lectureRows);
+    lectureSheetStatus.textContent = `Imported ${result.added}, updated ${result.updated} monthly record(s).`;
+    lectureSheetStatus.className = "save-status ok";
+  } catch (error) {
+    lectureSheetStatus.textContent = `Direct sync blocked: ${error.message}`;
+    lectureSheetStatus.className = "save-status error";
+  }
+}
+
+function importLectureCsvPaste() {
+  const lectureRows = lectureRecordsFromSheetText(lectureCsvPaste.value);
+  const result = importLectureRows(lectureRows);
+  lectureSheetStatus.textContent = `Imported ${result.added}, updated ${result.updated} monthly record(s) from pasted CSV.`;
+  lectureSheetStatus.className = "save-status ok";
+}
+
 messageBox.addEventListener("input", renderParsed);
 loginButton.addEventListener("click", login);
 loginId.addEventListener("keydown", (event) => {
@@ -847,6 +1091,8 @@ restoreFile.addEventListener("change", () => {
   const file = restoreFile.files?.[0];
   if (file) restoreBackupFile(file);
 });
+syncLectureSheetButton.addEventListener("click", syncLectureSheet);
+importLectureCsvButton.addEventListener("click", importLectureCsvPaste);
 recordsBody.addEventListener("change", (event) => {
   const id = event.target.dataset.id;
   if (event.target.dataset.action === "status") {

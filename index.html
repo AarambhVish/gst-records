@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GST Records</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="login-view" id="loginView">
+      <section class="login-panel">
+        <h1>GST Records</h1>
+        <label for="loginId">Login ID</label>
+        <input id="loginId" autocomplete="username" value="DV">
+        <button id="loginButton" class="primary">Login</button>
+        <p id="loginError" class="login-error" hidden>Invalid login ID. Use DV or SG.</p>
+      </section>
+    </main>
+
+    <main class="app" id="appView" hidden>
+      <section class="entry-panel">
+        <div class="panel-head">
+          <div>
+            <h1>GST Records</h1>
+            <p id="activeUserName"></p>
+          </div>
+          <div class="top-actions">
+            <button id="logoutButton">Logout</button>
+          </div>
+        </div>
+
+        <label class="message-label" for="messageBox">Message</label>
+        <textarea id="messageBox" spellcheck="false" placeholder="Full Name: Dilip Vishwakarma&#10;March 2026&#10;Lecture Fees : Rs 81000&#10;&#10;or paste bank receipt:&#10;Veranda credited Rs 87480 for March 2026"></textarea>
+
+        <div class="actions">
+          <button id="addRecord" class="primary">Add Record</button>
+          <button id="exportCsv">Export CSV</button>
+          <button id="downloadBackup">Backup</button>
+          <button id="restoreBackup">Restore</button>
+          <input id="restoreFile" type="file" accept="application/json,.json" hidden>
+          <span class="save-status" id="saveStatus">Ready</span>
+        </div>
+
+        <div class="parsed-card" id="parsedCard">
+          <div class="parsed-title">Ready to add</div>
+          <div class="parsed-grid" id="parsedGrid"></div>
+        </div>
+      </section>
+
+      <section class="summary-grid">
+        <article class="metric">
+          <span>Total Hours</span>
+          <strong id="totalHours">0</strong>
+        </article>
+        <article class="metric">
+          <span>Total Billing</span>
+          <strong id="totalBilling">0</strong>
+        </article>
+        <article class="metric due">
+          <span>GST Payable</span>
+          <strong id="gstPayable">0</strong>
+        </article>
+        <article class="metric">
+          <span>Total TDS</span>
+          <strong id="totalTds">0</strong>
+        </article>
+        <article class="metric">
+          <span>Bank Received</span>
+          <strong id="bankReceived">0</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <div class="table-wrap">
+          <div class="section-head">
+            <h2>Records</h2>
+            <span id="recordCount">0 entries</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>FY</th>
+                <th>Hours</th>
+                <th>Billing</th>
+                <th>GST</th>
+                <th>Gross</th>
+                <th>TDS</th>
+                <th>Bank</th>
+                <th>Form</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="recordsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal" id="editModal" hidden>
+      <form class="edit-card" id="editForm">
+        <div class="section-head">
+          <h2>Edit Record</h2>
+          <button type="button" class="icon-btn" id="closeEdit" title="Close">x</button>
+        </div>
+        <div class="edit-grid">
+          <label>
+            Month
+            <input id="editMonth" required placeholder="31-Mar-2026">
+          </label>
+          <label>
+            Name
+            <input id="editName" required>
+          </label>
+          <label>
+            Hours
+            <input id="editHours" type="number" min="0" step="0.01">
+          </label>
+          <label>
+            Calculation
+            <select id="editSource">
+              <option value="Forward">Billing amount</option>
+              <option value="Bank receipt">Bank received</option>
+            </select>
+          </label>
+          <label>
+            Amount
+            <input id="editAmount" type="number" min="0" step="0.01" required>
+          </label>
+          <label>
+            GST Status
+            <select id="editStatus">
+              <option>Unpaid</option>
+              <option>Paid</option>
+            </select>
+          </label>
+          <label>
+            Filing Form
+            <input id="editFilingForm" required>
+          </label>
+          <label>
+            Filing Due Date
+            <input id="editFilingDueDate" required placeholder="20-Apr-2026">
+          </label>
+        </div>
+        <div class="edit-preview" id="editPreview"></div>
+        <div class="actions end">
+          <button type="button" id="cancelEdit">Cancel</button>
+          <button type="submit" class="primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

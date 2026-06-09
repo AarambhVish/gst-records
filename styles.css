@@ -372,6 +372,49 @@ button.danger {
   text-align: center;
 }
 
+.sheet-table-wrap {
+  margin-top: 14px;
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid #cfdbe4;
+  background: #ffffff;
+}
+
+.sheet-table {
+  border-collapse: collapse;
+  table-layout: auto;
+  min-width: 1200px;
+  width: max-content;
+}
+
+.sheet-table th,
+.sheet-table td {
+  border: 1px solid #d8e2ea;
+  padding: 6px 8px;
+  min-width: 96px;
+  max-width: 260px;
+  height: 32px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #ffffff;
+}
+
+.sheet-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef5f7;
+  color: var(--teal-dark);
+  font-weight: 800;
+  text-align: center;
+}
+
+.sheet-table .sheet-header-row th {
+  background: #dff3f7;
+}
+
 .empty-note {
   color: var(--muted);
   font-weight: 700;

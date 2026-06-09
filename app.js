@@ -69,6 +69,7 @@ const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
 const importLectureCsvButton = document.querySelector("#importLectureCsv");
 const lectureSheetStatus = document.querySelector("#lectureSheetStatus");
 const lectureSummary = document.querySelector("#lectureSummary");
+const lectureSheetTable = document.querySelector("#lectureSheetTable");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll(".tab-panel");
 const parsedGrid = document.querySelector("#parsedGrid");
@@ -107,6 +108,10 @@ function storageKeyFor(userId) {
 
 function lectureRowsKeyFor(userId) {
   return `gst-records-lecture-rows-${userId}`;
+}
+
+function lectureTableKeyFor(userId) {
+  return `gst-records-lecture-table-${userId}`;
 }
 
 function loadRecords() {
@@ -166,6 +171,14 @@ function readHistoryRecords(userId) {
   } catch {
     return [];
   }
+}
+
+function escapeCell(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function writeRecordsEverywhere(userId, list) {
@@ -428,6 +441,13 @@ function lectureRecordsFromGviz(table) {
   return lectureRecordsFromSheetText(text);
 }
 
+function tableRowsFromGviz(table) {
+  return [
+    (table.cols || []).map((col, index) => col.label || `Column ${index + 1}`),
+    ...(table.rows || []).map((row) => (row.c || []).map(gvizCellValue)),
+  ];
+}
+
 function loadLectureSheetViaGviz(url, sheetName) {
   return new Promise((resolve, reject) => {
     const callbackName = `gstLectureSheetCallback_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -453,6 +473,9 @@ function loadLectureSheetViaGviz(url, sheetName) {
         reject(new Error("No rows found in the selected sheet."));
         return;
       }
+      const tableRows = tableRowsFromGviz(response.table);
+      saveLectureTable(tableRows);
+      renderLectureTable(tableRows);
       resolve(lectureRecordsFromGviz(response.table));
     };
 
@@ -471,12 +494,16 @@ async function loadLectureSheet(url, sheetName) {
     const response = await fetch(sheetUrlToCsv(url, sheetName), { cache: "no-store" });
     if (!response.ok) throw new Error(`CSV endpoint returned ${response.status}`);
     const text = await response.text();
+    const tableRows = parseCsv(text);
     const records = lectureRecordsFromSheetText(text);
     if (!records.length) throw new Error("No usable lecture rows found in CSV response.");
+    saveLectureTable(tableRows);
+    renderLectureTable(tableRows);
     return records;
   } catch (csvError) {
     try {
-      return await loadLectureSheetViaGviz(url, sheetName);
+      const records = await loadLectureSheetViaGviz(url, sheetName);
+      return records;
     } catch (jsonpError) {
       throw new Error(`${csvError.message}; JSONP fallback failed: ${jsonpError.message}`);
     }
@@ -671,12 +698,42 @@ function saveLectureRows(lectureRows) {
   localStorage.setItem(lectureRowsKeyFor(activeUser.id), JSON.stringify(lectureRows));
 }
 
+function saveLectureTable(tableRows) {
+  localStorage.setItem(lectureTableKeyFor(activeUser.id), JSON.stringify(tableRows));
+}
+
 function loadLectureRows() {
   try {
     return JSON.parse(localStorage.getItem(lectureRowsKeyFor(activeUser.id)) || "[]") || [];
   } catch {
     return [];
   }
+}
+
+function loadLectureTable() {
+  try {
+    return JSON.parse(localStorage.getItem(lectureTableKeyFor(activeUser.id)) || "[]") || [];
+  } catch {
+    return [];
+  }
+}
+
+function renderLectureTable(tableRows = loadLectureTable()) {
+  if (!tableRows.length) {
+    lectureSheetTable.innerHTML = "";
+    return;
+  }
+  const maxCols = Math.max(...tableRows.map((row) => row.length));
+  const normalizedRows = tableRows.map((row) => Array.from({ length: maxCols }, (_, index) => row[index] ?? ""));
+  const headerIndex = normalizedRows.findIndex(rowLooksLikeLectureHeader);
+  lectureSheetTable.innerHTML = normalizedRows.map((row, rowIndex) => {
+    const tag = rowIndex === headerIndex ? "th" : "td";
+    return `
+      <tr class="${rowIndex === headerIndex ? "sheet-header-row" : ""}">
+        ${row.map((cellValue) => `<${tag}>${escapeCell(cellValue)}</${tag}>`).join("")}
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderLectureSummary(lectureRows = loadLectureRows()) {
@@ -896,6 +953,7 @@ function showApp(user) {
   appView.hidden = false;
   render();
   renderLectureSummary();
+  renderLectureTable();
   verifySaved(activeUser.id, records.length);
   window.setTimeout(syncLectureSheet, 250);
 }
@@ -1222,6 +1280,9 @@ function importLectureCsvPaste() {
     syncLectureSheet();
     return;
   }
+  const tableRows = parseCsv(lectureCsvPaste.value);
+  saveLectureTable(tableRows);
+  renderLectureTable(tableRows);
   const lectureRows = lectureRecordsFromSheetText(lectureCsvPaste.value);
   const result = importLectureRows(lectureRows);
   if (result.months > 0) {

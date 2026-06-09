@@ -972,7 +972,7 @@ function showLogin() {
 function login() {
   const id = loginId.value.trim().toUpperCase();
   const user = USERS[id];
-  if (!user || loginPassword.value !== user.password) {
+  if (!user || loginPassword.value.trim() !== user.password) {
     loginError.hidden = false;
     return;
   }

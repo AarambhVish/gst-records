@@ -61,7 +61,6 @@ const restoreBackupButton = document.querySelector("#restoreBackup");
 const restoreFile = document.querySelector("#restoreFile");
 const saveStatus = document.querySelector("#saveStatus");
 const lectureSheetInfo = document.querySelector("#lectureSheetInfo");
-const lectureHourlyRate = document.querySelector("#lectureHourlyRate");
 const lectureImportName = document.querySelector("#lectureImportName");
 const lectureCsvPaste = document.querySelector("#lectureCsvPaste");
 const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
@@ -101,10 +100,6 @@ let editingRecordId = null;
 
 function storageKeyFor(userId) {
   return `gst-records-v2-${userId}`;
-}
-
-function rateKeyFor(userId) {
-  return `gst-records-hourly-rate-${userId}`;
 }
 
 function loadRecords() {
@@ -355,6 +350,19 @@ function lectureHoursFromRow(row, headers, values) {
   return 0;
 }
 
+function lectureBillingFromRow(row, headers, values) {
+  return parseAmount(cellFromRow(row, headers, [
+    "Billing",
+    "Bill",
+    "Billing Amount",
+    "Lecture Fees",
+    "Fees",
+    "Amount",
+    "Professional Fees",
+    "Invoice Amount",
+  ], values));
+}
+
 function lectureRecordsFromSheetText(text) {
   const rows = parseCsv(text);
   if (rows.length < 2) return [];
@@ -369,17 +377,19 @@ function lectureRecordsFromSheetText(text) {
     return {
       lectureDate,
       hours: lectureHoursFromRow(row, headers, values),
+      billing: lectureBillingFromRow(row, headers, values),
       includeFinance,
       recordType,
     };
-  }).filter((record) => record.lectureDate && record.hours > 0 && !/no|extra/i.test(record.includeFinance) && !/cancel/i.test(record.recordType));
+  }).filter((record) => record.lectureDate && (record.hours > 0 || record.billing > 0) && !/no|extra/i.test(record.includeFinance) && !/cancel/i.test(record.recordType));
 }
 
 function sheetUrlToGviz(url, sheetName, callbackName) {
   const id = url.match(/\/spreadsheets\/d\/([^/]+)/)?.[1] || url.match(/[?&]id=([^&]+)/)?.[1];
   if (!id) throw new Error("Please paste a valid Google Sheet link.");
-  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : "";
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=responseHandler:${callbackName}${encodedSheet}`;
+  const gid = url.match(/[?#&]gid=(\d+)/)?.[1];
+  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : gid ? `&gid=${encodeURIComponent(gid)}` : "";
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=responseHandler:${callbackName}&headers=1${encodedSheet}`;
 }
 
 function gvizCellValue(cellData) {
@@ -435,6 +445,18 @@ function loadLectureSheetViaGviz(url, sheetName) {
     script.src = sheetUrlToGviz(url, sheetName, callbackName);
     document.body.appendChild(script);
   });
+}
+
+function pastedSheetUrl() {
+  const text = lectureCsvPaste.value.trim();
+  return text.match(/https:\/\/docs\.google\.com\/spreadsheets\/d\/[^\s"']+/)?.[0] || "";
+}
+
+function lectureSyncSource() {
+  const pasted = pastedSheetUrl();
+  const config = LECTURE_SHEETS[activeUser.id];
+  if (pasted) return { url: pasted, sheetName: config.sheetName, label: `pasted link/${config.sheetName}` };
+  return { ...config, label: `${activeUser.id}/${config.sheetName}` };
 }
 
 function parseHours(text) {
@@ -601,25 +623,27 @@ function aggregateLectureMonths(lectureRows) {
   for (const lecture of lectureRows) {
     const month = monthEndFromIsoDate(lecture.lectureDate);
     if (!month) continue;
-    grouped.set(month, (grouped.get(month) || 0) + lecture.hours);
+    const current = grouped.get(month) || { month, hours: 0, billing: 0 };
+    current.hours += lecture.hours || 0;
+    current.billing += lecture.billing || 0;
+    grouped.set(month, current);
   }
-  return [...grouped.entries()].map(([month, hours]) => ({ month, hours }));
+  return [...grouped.values()];
 }
 
 function importLectureRows(lectureRows) {
-  const rate = Number(lectureHourlyRate.value);
-  if (!rate) {
-    lectureSheetStatus.textContent = "Sync failed: enter billing rate per hour.";
+  const monthly = aggregateLectureMonths(lectureRows);
+  if (!monthly.some((item) => item.billing > 0)) {
+    lectureSheetStatus.textContent = "Sync failed: no billing/fees/amount column found in sheet data.";
     lectureSheetStatus.className = "save-status error";
     return { added: 0, updated: 0, months: 0 };
   }
-  localStorage.setItem(rateKeyFor(activeUser.id), String(rate));
   const importName = lectureImportName.value.trim() || activeUser.name;
   let added = 0;
   let updated = 0;
 
-  for (const item of aggregateLectureMonths(lectureRows)) {
-    const amount = item.hours * rate;
+  for (const item of monthly) {
+    const amount = item.billing;
     const existing = records.find((record) => record.month === item.month && record.source === "Lecture sheet");
     const record = calculateRecord({
       id: existing?.id || crypto.randomUUID(),
@@ -788,10 +812,9 @@ function showApp(user) {
   activeUser = user;
   sessionStorage.setItem(SESSION_KEY, user.id);
   records = loadRecords();
-  lectureHourlyRate.value = localStorage.getItem(rateKeyFor(user.id)) || "";
   lectureImportName.value = user.name;
   const config = LECTURE_SHEETS[user.id];
-  lectureSheetInfo.textContent = `Fixed sheet for ${user.id}: ${config.sheetName}. Auto-sync runs after login.`;
+  lectureSheetInfo.textContent = `Fixed sheet for ${user.id}: ${config.sheetName}. Auto-sync runs after login and reads billing/fees/amount from the sheet.`;
   lectureSheetStatus.textContent = "Auto-sync starting...";
   lectureSheetStatus.className = "save-status";
   loginView.hidden = true;
@@ -1089,11 +1112,11 @@ async function syncLectureSheet() {
   lectureSheetStatus.textContent = "Reading Google Sheet...";
   lectureSheetStatus.className = "save-status";
   try {
-    const config = LECTURE_SHEETS[activeUser.id];
+    const config = lectureSyncSource();
     const lectureRows = await loadLectureSheetViaGviz(config.url, config.sheetName);
     const result = importLectureRows(lectureRows);
     if (result.months > 0) {
-      lectureSheetStatus.textContent = `Synced ${config.sheetName}: imported ${result.added}, updated ${result.updated}.`;
+      lectureSheetStatus.textContent = `Synced ${config.label}: imported ${result.added}, updated ${result.updated}.`;
       lectureSheetStatus.className = "save-status ok";
     }
   } catch (error) {
@@ -1103,6 +1126,10 @@ async function syncLectureSheet() {
 }
 
 function importLectureCsvPaste() {
+  if (pastedSheetUrl()) {
+    syncLectureSheet();
+    return;
+  }
   const lectureRows = lectureRecordsFromSheetText(lectureCsvPaste.value);
   const result = importLectureRows(lectureRows);
   if (result.months > 0) {
@@ -1133,9 +1160,6 @@ restoreFile.addEventListener("change", () => {
 });
 syncLectureSheetButton.addEventListener("click", syncLectureSheet);
 importLectureCsvButton.addEventListener("click", importLectureCsvPaste);
-lectureHourlyRate.addEventListener("change", () => {
-  if (activeUser) localStorage.setItem(rateKeyFor(activeUser.id), lectureHourlyRate.value);
-});
 recordsBody.addEventListener("change", (event) => {
   const id = event.target.dataset.id;
   if (event.target.dataset.action === "status") {

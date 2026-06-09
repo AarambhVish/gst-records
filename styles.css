@@ -460,6 +460,15 @@ button.danger {
   line-height: 1.35;
 }
 
+.remark-input {
+  width: 180px;
+  min-height: 30px;
+  border: 1px solid #c7d5df;
+  border-radius: 6px;
+  padding: 0 8px;
+  font: inherit;
+}
+
 .empty-note {
   color: var(--muted);
   font-weight: 700;

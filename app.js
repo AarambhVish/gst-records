@@ -114,6 +114,10 @@ function lectureTableKeyFor(userId) {
   return `gst-records-lecture-table-${userId}`;
 }
 
+function lectureRemarksKeyFor(userId) {
+  return `gst-records-lecture-remarks-${userId}`;
+}
+
 function loadRecords() {
   try {
     const current = readStoredRecords(storageKeyFor(activeUser.id));
@@ -485,22 +489,74 @@ function monthLabelFromKey(monthKey) {
   });
 }
 
+function dateFromLectureValue(value) {
+  const isoDate = normalizeLectureDate(value);
+  if (!isoDate) return null;
+  const date = new Date(`${isoDate}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatLectureDate(value) {
+  const date = dateFromLectureValue(value);
+  if (!date) return value || "";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = date.toLocaleDateString("en-GB", { month: "short" });
+  const year = String(date.getFullYear()).slice(-2);
+  const weekday = date.toLocaleDateString("en-GB", { weekday: "short" });
+  return `${day}/${month}/${year} ${weekday}`;
+}
+
+function formatEntryDate(value) {
+  const date = new Date(String(value || "").replaceAll("-", " "));
+  if (Number.isNaN(date.getTime())) return value || "";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = date.toLocaleDateString("en-GB", { month: "short" });
+  const year = String(date.getFullYear()).slice(-2);
+  const weekday = date.toLocaleDateString("en-GB", { weekday: "short" });
+  const hasTime = /\d{1,2}:\d{2}/.test(String(value));
+  const time = hasTime ? ` ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}` : "";
+  return `${day}/${month}/${year} ${weekday}${time}`;
+}
+
+function lectureRowKey(row) {
+  const source = [
+    row[0],
+    row[2],
+    row[5],
+    row[11],
+    row[12],
+    row[13],
+    row[14],
+    row[45],
+    row[47],
+  ].map((value) => String(value ?? "").trim()).join("|");
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash << 5) - hash) + source.charCodeAt(index);
+    hash |= 0;
+  }
+  return `lecture-${Math.abs(hash)}`;
+}
+
 function lectureRegisterRows(tableRows) {
   return tableRows
     .filter(rowHasLectureDetail)
     .map((row) => ({
-      entryDate: row[0] || "",
-      lectureDate: row[2] || "",
+      rowKey: lectureRowKey(row),
+      entryDate: formatEntryDate(row[0]),
+      lectureDate: formatLectureDate(row[2]),
+      sortDate: dateFromLectureValue(row[2])?.getTime() || 0,
       monthKey: monthKeyFromLectureDate(row[2]),
-      batch: firstFilled([row[5], row[20]]),
+      lectureNo: row[45] || "",
+      batch: row[5] || "",
       level: row[7] || "",
       timeInHour: row[11] || "",
       timeInMinute: row[12] || "",
       timeOutHour: row[13] || "",
       timeOutMinute: row[14] || "",
       subject: firstFilled([row[6], row[20], row[21], row[22], row[23]]),
-      topic: firstFilled(row.slice(24, 48)),
-      location: firstFilled([row[19], row[48]]),
+      topic: firstFilled(row.slice(24, 47)),
+      location: firstFilled([row[47], row[19]]),
     }));
 }
 
@@ -778,6 +834,20 @@ function loadLectureTable() {
   }
 }
 
+function loadLectureRemarks() {
+  try {
+    return JSON.parse(localStorage.getItem(lectureRemarksKeyFor(activeUser.id)) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLectureRemark(rowKey, value) {
+  const remarks = loadLectureRemarks();
+  remarks[rowKey] = value;
+  localStorage.setItem(lectureRemarksKeyFor(activeUser.id), JSON.stringify(remarks));
+}
+
 function renderLectureMonthFilter(rows) {
   const selected = lectureMonthFilter.value;
   const monthKeys = [...new Set(rows.map((row) => row.monthKey).filter(Boolean))]
@@ -798,7 +868,14 @@ function renderLectureTable(tableRows = loadLectureTable()) {
   const rows = lectureRegisterRows(tableRows);
   renderLectureMonthFilter(rows);
   const selectedMonth = lectureMonthFilter.value;
-  const visibleRows = selectedMonth ? rows.filter((row) => row.monthKey === selectedMonth) : rows;
+  const remarks = loadLectureRemarks();
+  const visibleRows = (selectedMonth ? rows.filter((row) => row.monthKey === selectedMonth) : rows)
+    .sort((a, b) => {
+      const dateSort = selectedMonth ? a.sortDate - b.sortDate : b.sortDate - a.sortDate;
+      if (dateSort) return dateSort;
+      const timeSort = (toNumber(a.timeInHour) - toNumber(b.timeInHour)) || (toNumber(a.timeInMinute) - toNumber(b.timeInMinute));
+      return selectedMonth ? timeSort : -timeSort;
+    });
   lectureFilterCount.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? "record" : "records"}`;
   if (!rows.length) {
     lectureSheetTable.innerHTML = `<tbody><tr><td class="empty-note">No lecture records found in the synced sheet.</td></tr></tbody>`;
@@ -809,6 +886,7 @@ function renderLectureTable(tableRows = loadLectureTable()) {
       <tr>
         <th>Date of Entry</th>
         <th>Date of Lecture</th>
+        <th>Lecture No</th>
         <th>Batch</th>
         <th>Level</th>
         <th>Time In Hr</th>
@@ -818,6 +896,7 @@ function renderLectureTable(tableRows = loadLectureTable()) {
         <th>Subject Taught</th>
         <th>Topic Taught</th>
         <th>Location</th>
+        <th>Remark</th>
       </tr>
     </thead>
     <tbody>
@@ -825,6 +904,7 @@ function renderLectureTable(tableRows = loadLectureTable()) {
         <tr>
           <td>${escapeCell(row.entryDate)}</td>
           <td>${escapeCell(row.lectureDate)}</td>
+          <td>${escapeCell(row.lectureNo)}</td>
           <td>${escapeCell(row.batch)}</td>
           <td>${escapeCell(row.level)}</td>
           <td class="num">${escapeCell(row.timeInHour)}</td>
@@ -834,6 +914,9 @@ function renderLectureTable(tableRows = loadLectureTable()) {
           <td>${escapeCell(row.subject)}</td>
           <td class="wide-cell">${escapeCell(row.topic)}</td>
           <td>${escapeCell(row.location)}</td>
+          <td>
+            <input class="remark-input" data-remark-id="${escapeCell(row.rowKey)}" value="${escapeCell(remarks[row.rowKey] || "")}" placeholder="Remark">
+          </td>
         </tr>
       `).join("")}
     </tbody>
@@ -1328,6 +1411,10 @@ restoreFile.addEventListener("change", () => {
 });
 syncLectureSheetButton.addEventListener("click", syncLectureSheet);
 lectureMonthFilter.addEventListener("change", () => renderLectureTable());
+lectureSheetTable.addEventListener("input", (event) => {
+  const rowKey = event.target.dataset.remarkId;
+  if (rowKey) saveLectureRemark(rowKey, event.target.value);
+});
 recordsBody.addEventListener("change", (event) => {
   const id = event.target.dataset.id;
   if (event.target.dataset.action === "status") {

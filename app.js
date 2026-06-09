@@ -25,11 +25,13 @@ const USERS = {
   SG: {
     id: "SG",
     password: "Sandesh",
-    name: "SG",
-    address: "",
-    pan: "",
-    gstin: "",
-    signature: "SG",
+    name: "Sandesh Madanlal Gupta",
+    address: "4, SAPPHIRE JAISHANKAR CHS LTD, Mumbai, MODREN ENGLISH SCHOOL, Mumbai Suburban, Maharashtra, 400089",
+    pan: "ALVPG3374P",
+    gstin: "27ALVPG3374P1Z7",
+    signature: "Sandesh M. Gupta",
+    signatureColor: "#111111",
+    invoiceDateFormat: "slash",
   },
 };
 
@@ -999,6 +1001,19 @@ function monthName(record) {
   return date ? date.toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : record.month;
 }
 
+function invoiceDateFor(record, user) {
+  const date = toDate(record.month);
+  if (!date) return record.month;
+  if (user.invoiceDateFormat === "slash") {
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  }
+  return record.month;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1012,6 +1027,7 @@ function invoiceHtml(record) {
   const sgst = record.gst / 2;
   const cgst = record.gst / 2;
   const invoiceNo = invoiceNumberFor(record);
+  const invoiceDate = invoiceDateFor(record, user);
   const billTo = DEFAULT_BILL_TO;
   return `<!doctype html>
 <html>
@@ -1041,7 +1057,7 @@ function invoiceHtml(record) {
     .total-row td { font-weight: 700; }
     .footer { min-height: 120px; display: grid; grid-template-columns: 1fr 190px; border-top: 1px solid #000; }
     .meta { padding: 12px 6px; font-size: 15px; line-height: 1.55; }
-    .sign { display: grid; place-items: center; font-size: 31px; color: #064ecf; font-family: "Brush Script MT", cursive; transform: rotate(-10deg); }
+    .sign { display: grid; place-items: center; font-size: 31px; color: ${escapeHtml(user.signatureColor || "#064ecf")}; font-family: "Brush Script MT", cursive; transform: rotate(-10deg); }
     .print { margin: 14px 0; text-align: center; }
     .print button { min-height: 38px; padding: 0 16px; font: 700 14px Arial, sans-serif; }
     @media print { .print { display: none; } }
@@ -1062,7 +1078,7 @@ function invoiceHtml(record) {
       </div>
       <div class="bill">
         <div>Bill No :- ${escapeHtml(invoiceNo)}</div>
-        <div>Date :- ${escapeHtml(record.month)}</div>
+        <div>Date :- ${escapeHtml(invoiceDate)}</div>
       </div>
     </div>
     <table>

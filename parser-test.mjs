@@ -233,3 +233,29 @@ console.log(JSON.stringify(billKeyword, null, 2));
 if (billKeyword.billing !== 81000 || billKeyword.bank !== 87480) {
   throw new Error("Bill keyword forward calculation failed");
 }
+
+const sgForward = parseMessage(`Bill 379100
+May 2026`);
+console.log(JSON.stringify(sgForward, null, 2));
+if (
+  sgForward.billing !== 379100 ||
+  Math.round(sgForward.gst) !== 68238 ||
+  Math.round(sgForward.gross) !== 447338 ||
+  Math.round(sgForward.tds) !== 37910 ||
+  Math.round(sgForward.bank) !== 409428
+) {
+  throw new Error("SG-style forward calculation failed");
+}
+
+const sgReverse = parseMessage(`Bank 409428
+May 2026`);
+console.log(JSON.stringify(sgReverse, null, 2));
+if (
+  Math.round(sgReverse.billing) !== 379100 ||
+  Math.round(sgReverse.gst) !== 68238 ||
+  Math.round(sgReverse.gross) !== 447338 ||
+  Math.round(sgReverse.tds) !== 37910 ||
+  sgReverse.bank !== 409428
+) {
+  throw new Error("SG-style reverse calculation failed");
+}

@@ -6,10 +6,12 @@ const LECTURE_SHEETS = {
   DV: {
     url: "https://docs.google.com/spreadsheets/d/1cUqu5dWU3xtcwMwH7Y4ZiouWfCFVor4GtBjv3c52_rM/edit?gid=772549461#gid=772549461",
     sheetName: "DV",
+    gid: "772549461",
   },
   SG: {
     url: "https://docs.google.com/spreadsheets/d/1rY5xl9_9TBqX5rcjx10OFm5VPB6XHuai2hEH0nmRqTo/edit?gid=2045005593#gid=2045005593",
     sheetName: "SG",
+    gid: "2045005593",
   },
 };
 const USERS = {
@@ -408,20 +410,31 @@ function lectureRecordsFromSheetText(text) {
   }).filter((record) => record.lectureDate && (record.hours > 0 || record.billing > 0) && !/no|extra/i.test(record.includeFinance) && !/cancel/i.test(record.recordType));
 }
 
-function sheetUrlToGviz(url, sheetName, callbackName) {
+function sheetInfoFromUrl(url) {
   const id = url.match(/\/spreadsheets\/d\/([^/]+)/)?.[1] || url.match(/[?&]id=([^&]+)/)?.[1];
   if (!id) throw new Error("Please paste a valid Google Sheet link.");
   const gid = url.match(/[?#&]gid=(\d+)/)?.[1];
-  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : gid ? `&gid=${encodeURIComponent(gid)}` : "";
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=responseHandler:${callbackName}&headers=1${encodedSheet}`;
+  return { id, gid };
 }
 
-function sheetUrlToCsv(url, sheetName) {
-  const id = url.match(/\/spreadsheets\/d\/([^/]+)/)?.[1] || url.match(/[?&]id=([^&]+)/)?.[1];
-  if (!id) throw new Error("Please paste a valid Google Sheet link.");
-  const gid = url.match(/[?#&]gid=(\d+)/)?.[1];
-  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : gid ? `&gid=${encodeURIComponent(gid)}` : "";
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&headers=1${encodedSheet}`;
+function sheetUrlToGvizVariants(url, sheetName, gid, callbackName) {
+  const info = sheetInfoFromUrl(url);
+  const base = `https://docs.google.com/spreadsheets/d/${info.id}/gviz/tq?tqx=responseHandler:${callbackName}`;
+  const chosenGid = gid || info.gid;
+  return [
+    sheetName ? `${base}&sheet=${encodeURIComponent(sheetName)}` : "",
+    chosenGid ? `${base}&gid=${encodeURIComponent(chosenGid)}` : "",
+    sheetName ? `${base}&headers=1&sheet=${encodeURIComponent(sheetName)}` : "",
+    chosenGid ? `${base}&headers=1&gid=${encodeURIComponent(chosenGid)}` : "",
+    `${base}`,
+  ].filter(Boolean);
+}
+
+function sheetUrlToCsv(url, sheetName, gid) {
+  const info = sheetInfoFromUrl(url);
+  const chosenGid = gid || info.gid;
+  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : chosenGid ? `&gid=${encodeURIComponent(chosenGid)}` : "";
+  return `https://docs.google.com/spreadsheets/d/${info.id}/gviz/tq?tqx=out:csv${encodedSheet}`;
 }
 
 function gvizCellValue(cellData) {
@@ -448,14 +461,13 @@ function tableRowsFromGviz(table) {
   ];
 }
 
-function loadLectureSheetViaGviz(url, sheetName) {
+function loadGvizUrl(scriptUrl, callbackName) {
   return new Promise((resolve, reject) => {
-    const callbackName = `gstLectureSheetCallback_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const script = document.createElement("script");
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error("Google Sheet did not respond. Check sharing or publish settings."));
-    }, 15000);
+      reject(new Error("Google Sheet did not respond."));
+    }, 10000);
 
     function cleanup() {
       clearTimeout(timer);
@@ -481,31 +493,44 @@ function loadLectureSheetViaGviz(url, sheetName) {
 
     script.onerror = () => {
       cleanup();
-      reject(new Error("Unable to load Sheet. It may still be private."));
+      reject(new Error("Unable to load this Sheet URL variant."));
     };
 
-    script.src = sheetUrlToGviz(url, sheetName, callbackName);
+    script.src = scriptUrl;
     document.body.appendChild(script);
   });
 }
 
-async function loadLectureSheet(url, sheetName) {
-  try {
-    const response = await fetch(sheetUrlToCsv(url, sheetName), { cache: "no-store" });
-    if (!response.ok) throw new Error(`CSV endpoint returned ${response.status}`);
-    const text = await response.text();
-    const tableRows = parseCsv(text);
-    const records = lectureRecordsFromSheetText(text);
-    if (!records.length) throw new Error("No usable lecture rows found in CSV response.");
-    saveLectureTable(tableRows);
-    renderLectureTable(tableRows);
-    return records;
-  } catch (csvError) {
+async function loadLectureSheetViaGviz(url, sheetName, gid) {
+  const callbackBase = `gstLectureSheetCallback_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const variants = sheetUrlToGvizVariants(url, sheetName, gid, callbackBase);
+  const errors = [];
+  for (const variant of variants) {
     try {
-      const records = await loadLectureSheetViaGviz(url, sheetName);
+      return await loadGvizUrl(variant, callbackBase);
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+  throw new Error(errors[errors.length - 1] || "Unable to load Sheet.");
+}
+
+async function loadLectureSheet(url, sheetName, gid) {
+  try {
+    return await loadLectureSheetViaGviz(url, sheetName, gid);
+  } catch (jsonpError) {
+    try {
+      const response = await fetch(sheetUrlToCsv(url, sheetName, gid), { cache: "no-store" });
+      if (!response.ok) throw new Error(`CSV endpoint returned ${response.status}`);
+      const text = await response.text();
+      const tableRows = parseCsv(text);
+      const records = lectureRecordsFromSheetText(text);
+      if (!records.length) throw new Error("No usable lecture rows found in CSV response.");
+      saveLectureTable(tableRows);
+      renderLectureTable(tableRows);
       return records;
-    } catch (jsonpError) {
-      throw new Error(`${csvError.message}; JSONP fallback failed: ${jsonpError.message}`);
+    } catch (csvError) {
+      throw new Error(`${jsonpError.message}; CSV fallback failed: ${csvError.message}`);
     }
   }
 }
@@ -518,7 +543,7 @@ function pastedSheetUrl() {
 function lectureSyncSource() {
   const pasted = pastedSheetUrl();
   const config = LECTURE_SHEETS[activeUser.id];
-  if (pasted) return { url: pasted, sheetName: config.sheetName, label: `pasted link/${config.sheetName}` };
+  if (pasted) return { url: pasted, sheetName: config.sheetName, gid: config.gid, label: `pasted link/${config.sheetName}` };
   return { ...config, label: `${activeUser.id}/${config.sheetName}` };
 }
 
@@ -1261,7 +1286,7 @@ async function syncLectureSheet() {
   lectureSheetStatus.className = "save-status";
   try {
     const config = lectureSyncSource();
-    const lectureRows = await loadLectureSheet(config.url, config.sheetName);
+    const lectureRows = await loadLectureSheet(config.url, config.sheetName, config.gid);
     const result = importLectureRows(lectureRows);
     if (result.months > 0) {
       lectureSheetStatus.textContent = result.billableMonths > 0

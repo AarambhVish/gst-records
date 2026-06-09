@@ -465,13 +465,6 @@ function firstFilled(values) {
   return "";
 }
 
-function formatTimePair(hour, minute) {
-  const hourNumber = toNumber(hour);
-  const minuteNumber = toNumber(minute);
-  if (!hourNumber && !minuteNumber && String(hour ?? "").trim() === "" && String(minute ?? "").trim() === "") return "";
-  return `${String(hourNumber).padStart(2, "0")}:${String(minuteNumber).padStart(2, "0")}`;
-}
-
 function rowHasLectureDetail(row) {
   return row.some((cellValue) => String(cellValue ?? "").trim() !== "") && normalizeLectureDate(row[2]);
 }
@@ -488,18 +481,9 @@ function lectureRegisterRows(tableRows) {
       timeInMinute: row[12] || "",
       timeOutHour: row[13] || "",
       timeOutMinute: row[14] || "",
-      timeIn: formatTimePair(row[11], row[12]),
-      timeOut: formatTimePair(row[13], row[14]),
-      netHours: row[15] || "",
-      netMinutes: row[16] || "",
       subject: firstFilled([row[6], row[20], row[21], row[22], row[23]]),
       topic: firstFilled(row.slice(24, 48)),
-      status: row[10] || "",
-      mode: row[17] || "",
-      attempt: row[18] || "",
       location: firstFilled([row[19], row[48]]),
-      actualLocation: row[48] || "",
-      email: row[50] || "",
     }));
 }
 
@@ -798,18 +782,9 @@ function renderLectureTable(tableRows = loadLectureTable()) {
         <th>Time In Min</th>
         <th>Time Out Hr</th>
         <th>Time Out Min</th>
-        <th>Time In</th>
-        <th>Time Out</th>
-        <th>Net Hr</th>
-        <th>Net Min</th>
         <th>Subject Taught</th>
         <th>Topic Taught</th>
-        <th>Status</th>
-        <th>Mode</th>
-        <th>Attempt</th>
         <th>Location</th>
-        <th>Actual Location</th>
-        <th>Email</th>
       </tr>
     </thead>
     <tbody>
@@ -823,18 +798,9 @@ function renderLectureTable(tableRows = loadLectureTable()) {
           <td class="num">${escapeCell(row.timeInMinute)}</td>
           <td class="num">${escapeCell(row.timeOutHour)}</td>
           <td class="num">${escapeCell(row.timeOutMinute)}</td>
-          <td>${escapeCell(row.timeIn)}</td>
-          <td>${escapeCell(row.timeOut)}</td>
-          <td class="num">${escapeCell(row.netHours)}</td>
-          <td class="num">${escapeCell(row.netMinutes)}</td>
           <td>${escapeCell(row.subject)}</td>
           <td class="wide-cell">${escapeCell(row.topic)}</td>
-          <td>${escapeCell(row.status)}</td>
-          <td>${escapeCell(row.mode)}</td>
-          <td>${escapeCell(row.attempt)}</td>
           <td>${escapeCell(row.location)}</td>
-          <td>${escapeCell(row.actualLocation)}</td>
-          <td>${escapeCell(row.email)}</td>
         </tr>
       `).join("")}
     </tbody>

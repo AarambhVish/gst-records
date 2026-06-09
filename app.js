@@ -392,6 +392,14 @@ function sheetUrlToGviz(url, sheetName, callbackName) {
   return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=responseHandler:${callbackName}&headers=1${encodedSheet}`;
 }
 
+function sheetUrlToCsv(url, sheetName) {
+  const id = url.match(/\/spreadsheets\/d\/([^/]+)/)?.[1] || url.match(/[?&]id=([^&]+)/)?.[1];
+  if (!id) throw new Error("Please paste a valid Google Sheet link.");
+  const gid = url.match(/[?#&]gid=(\d+)/)?.[1];
+  const encodedSheet = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : gid ? `&gid=${encodeURIComponent(gid)}` : "";
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&headers=1${encodedSheet}`;
+}
+
 function gvizCellValue(cellData) {
   if (!cellData) return "";
   if (cellData.f !== undefined && cellData.f !== null) return cellData.f;
@@ -445,6 +453,23 @@ function loadLectureSheetViaGviz(url, sheetName) {
     script.src = sheetUrlToGviz(url, sheetName, callbackName);
     document.body.appendChild(script);
   });
+}
+
+async function loadLectureSheet(url, sheetName) {
+  try {
+    const response = await fetch(sheetUrlToCsv(url, sheetName), { cache: "no-store" });
+    if (!response.ok) throw new Error(`CSV endpoint returned ${response.status}`);
+    const text = await response.text();
+    const records = lectureRecordsFromSheetText(text);
+    if (!records.length) throw new Error("No usable lecture rows found in CSV response.");
+    return records;
+  } catch (csvError) {
+    try {
+      return await loadLectureSheetViaGviz(url, sheetName);
+    } catch (jsonpError) {
+      throw new Error(`${csvError.message}; JSONP fallback failed: ${jsonpError.message}`);
+    }
+  }
 }
 
 function pastedSheetUrl() {
@@ -1113,7 +1138,7 @@ async function syncLectureSheet() {
   lectureSheetStatus.className = "save-status";
   try {
     const config = lectureSyncSource();
-    const lectureRows = await loadLectureSheetViaGviz(config.url, config.sheetName);
+    const lectureRows = await loadLectureSheet(config.url, config.sheetName);
     const result = importLectureRows(lectureRows);
     if (result.months > 0) {
       lectureSheetStatus.textContent = `Synced ${config.label}: imported ${result.added}, updated ${result.updated}.`;

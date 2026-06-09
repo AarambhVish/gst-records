@@ -121,6 +121,15 @@
           <button id="syncLectureSheet" type="button">Sync Records</button>
           <span class="save-status" id="lectureSheetStatus">Ready</span>
         </div>
+        <div class="lecture-filters" aria-label="Lecture record filters">
+          <label>
+            <span>Month</span>
+            <select id="lectureMonthFilter">
+              <option value="">All months</option>
+            </select>
+          </label>
+          <span id="lectureFilterCount" class="filter-count">0 records</span>
+        </div>
         <div class="sheet-table-wrap" id="lectureSheetTableWrap">
           <table class="sheet-table" id="lectureSheetTable"></table>
         </div>

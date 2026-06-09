@@ -68,6 +68,8 @@ const lectureSheetInfo = document.querySelector("#lectureSheetInfo");
 const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
 const lectureSheetStatus = document.querySelector("#lectureSheetStatus");
 const lectureSheetTable = document.querySelector("#lectureSheetTable");
+const lectureMonthFilter = document.querySelector("#lectureMonthFilter");
+const lectureFilterCount = document.querySelector("#lectureFilterCount");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll(".tab-panel");
 const parsedGrid = document.querySelector("#parsedGrid");
@@ -469,12 +471,27 @@ function rowHasLectureDetail(row) {
   return row.some((cellValue) => String(cellValue ?? "").trim() !== "") && normalizeLectureDate(row[2]);
 }
 
+function monthKeyFromLectureDate(value) {
+  const isoDate = normalizeLectureDate(value);
+  return isoDate ? isoDate.slice(0, 7) : "";
+}
+
+function monthLabelFromKey(monthKey) {
+  if (!monthKey) return "";
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-GB", {
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function lectureRegisterRows(tableRows) {
   return tableRows
     .filter(rowHasLectureDetail)
     .map((row) => ({
       entryDate: row[0] || "",
       lectureDate: row[2] || "",
+      monthKey: monthKeyFromLectureDate(row[2]),
       batch: firstFilled([row[5], row[20]]),
       level: row[7] || "",
       timeInHour: row[11] || "",
@@ -761,12 +778,28 @@ function loadLectureTable() {
   }
 }
 
+function renderLectureMonthFilter(rows) {
+  const selected = lectureMonthFilter.value;
+  const monthKeys = [...new Set(rows.map((row) => row.monthKey).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a));
+  lectureMonthFilter.innerHTML = `
+    <option value="">All months</option>
+    ${monthKeys.map((monthKey) => `<option value="${monthKey}">${monthLabelFromKey(monthKey)}</option>`).join("")}
+  `;
+  lectureMonthFilter.value = monthKeys.includes(selected) ? selected : "";
+}
+
 function renderLectureTable(tableRows = loadLectureTable()) {
   if (!tableRows.length) {
     lectureSheetTable.innerHTML = `<tbody><tr><td class="empty-note">No lecture records synced yet.</td></tr></tbody>`;
+    lectureFilterCount.textContent = "0 records";
     return;
   }
   const rows = lectureRegisterRows(tableRows);
+  renderLectureMonthFilter(rows);
+  const selectedMonth = lectureMonthFilter.value;
+  const visibleRows = selectedMonth ? rows.filter((row) => row.monthKey === selectedMonth) : rows;
+  lectureFilterCount.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? "record" : "records"}`;
   if (!rows.length) {
     lectureSheetTable.innerHTML = `<tbody><tr><td class="empty-note">No lecture records found in the synced sheet.</td></tr></tbody>`;
     return;
@@ -788,7 +821,7 @@ function renderLectureTable(tableRows = loadLectureTable()) {
       </tr>
     </thead>
     <tbody>
-      ${rows.map((row) => `
+      ${visibleRows.map((row) => `
         <tr>
           <td>${escapeCell(row.entryDate)}</td>
           <td>${escapeCell(row.lectureDate)}</td>
@@ -1294,6 +1327,7 @@ restoreFile.addEventListener("change", () => {
   if (file) restoreBackupFile(file);
 });
 syncLectureSheetButton.addEventListener("click", syncLectureSheet);
+lectureMonthFilter.addEventListener("change", () => renderLectureTable());
 recordsBody.addEventListener("change", (event) => {
   const id = event.target.dataset.id;
   if (event.target.dataset.action === "status") {

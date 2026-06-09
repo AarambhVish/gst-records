@@ -17,7 +17,7 @@ const LECTURE_SHEETS = {
 const USERS = {
   DV: {
     id: "DV",
-    password: "Apple@123",
+    passwordHash: "35f05f92f4e52217d47df7af1ece929b576a886f409f95dda09a5b1f5837f89e",
     name: "Dilip Vishwakarma",
     address: "B32 303 SCN, Thakur Complex, Kandivali-East, Mumbai 400101",
     pan: "AEEPV1448M",
@@ -26,7 +26,7 @@ const USERS = {
   },
   SG: {
     id: "SG",
-    password: "Sandesh",
+    passwordHash: "f3b5f09652e8c0043a1742e7f81cee154dbff38dd5c164b32294bf84fd77a7aa",
     name: "Sandesh Madanlal Gupta",
     address: "4, SAPPHIRE JAISHANKAR CHS LTD, Mumbai, MODREN ENGLISH SCHOOL, Mumbai Suburban, Maharashtra, 400089",
     pan: "ALVPG3374P",
@@ -183,6 +183,12 @@ function escapeCell(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function writeRecordsEverywhere(userId, list) {
@@ -1085,10 +1091,11 @@ function showLogin() {
   loginView.hidden = false;
 }
 
-function login() {
+async function login() {
   const id = loginId.value.trim().toUpperCase();
   const user = USERS[id];
-  if (!user || loginPassword.value.trim() !== user.password) {
+  const passwordHash = await sha256Hex(loginPassword.value.trim());
+  if (!user || passwordHash !== user.passwordHash) {
     loginError.hidden = false;
     return;
   }

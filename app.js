@@ -66,6 +66,7 @@ const lectureCsvPaste = document.querySelector("#lectureCsvPaste");
 const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
 const importLectureCsvButton = document.querySelector("#importLectureCsv");
 const lectureSheetStatus = document.querySelector("#lectureSheetStatus");
+const lectureSummary = document.querySelector("#lectureSummary");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll(".tab-panel");
 const parsedGrid = document.querySelector("#parsedGrid");
@@ -100,6 +101,10 @@ let editingRecordId = null;
 
 function storageKeyFor(userId) {
   return `gst-records-v2-${userId}`;
+}
+
+function lectureRowsKeyFor(userId) {
+  return `gst-records-lecture-rows-${userId}`;
 }
 
 function loadRecords() {
@@ -324,6 +329,10 @@ function cellFromRow(row, headers, aliases, values) {
   return index >= 0 ? values[index] || "" : "";
 }
 
+function cellWithPosition(row, headers, aliases, values, fallbackIndex) {
+  return cellFromRow(row, headers, aliases, values) || values[fallbackIndex] || "";
+}
+
 function normalizeLectureDate(value) {
   if (!value) return "";
   const clean = String(value).trim();
@@ -371,12 +380,12 @@ function lectureRecordsFromSheetText(text) {
   const headers = normalizedRows[0];
   return normalizedRows.slice(1).map((values) => {
     const row = Object.fromEntries(headers.map((header, index) => [normalizeHeader(header), values[index] || ""]));
-    const lectureDate = normalizeLectureDate(cellFromRow(row, headers, ["Date of the Lecture", "Date of Lecture", "Lecture Date", "Date"], values));
+    const lectureDate = normalizeLectureDate(cellWithPosition(row, headers, ["Date of the Lecture", "Date of Lecture", "Lecture Date", "Date"], values, 2));
     const includeFinance = cellFromRow(row, headers, ["Include for finance", "Finance", "Submit to finance"], values);
     const recordType = cellFromRow(row, headers, ["Record type", "Lecture type"], values);
     return {
       lectureDate,
-      hours: lectureHoursFromRow(row, headers, values),
+      hours: lectureHoursFromRow(row, headers, values) || (toNumber(values[3]) + (toNumber(values[4]) / 60)),
       billing: lectureBillingFromRow(row, headers, values),
       includeFinance,
       recordType,
@@ -656,18 +665,57 @@ function aggregateLectureMonths(lectureRows) {
   return [...grouped.values()];
 }
 
+function saveLectureRows(lectureRows) {
+  localStorage.setItem(lectureRowsKeyFor(activeUser.id), JSON.stringify(lectureRows));
+}
+
+function loadLectureRows() {
+  try {
+    return JSON.parse(localStorage.getItem(lectureRowsKeyFor(activeUser.id)) || "[]") || [];
+  } catch {
+    return [];
+  }
+}
+
+function renderLectureSummary(lectureRows = loadLectureRows()) {
+  const monthly = aggregateLectureMonths(lectureRows)
+    .sort((a, b) => new Date(b.month.replaceAll("-", " ")) - new Date(a.month.replaceAll("-", " ")));
+  if (!monthly.length) {
+    lectureSummary.innerHTML = `<p class="empty-note">No lecture rows synced yet.</p>`;
+    return;
+  }
+  lectureSummary.innerHTML = `
+    <table class="mini-table">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Hours</th>
+          <th>Billing in Sheet</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${monthly.map((item) => `
+          <tr>
+            <td>${item.month}</td>
+            <td class="num">${formatHours(item.hours)}</td>
+            <td class="num">${formatMoney(item.billing)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
 function importLectureRows(lectureRows) {
   const monthly = aggregateLectureMonths(lectureRows);
-  if (!monthly.some((item) => item.billing > 0)) {
-    lectureSheetStatus.textContent = "Sync failed: no billing/fees/amount column found in sheet data.";
-    lectureSheetStatus.className = "save-status error";
-    return { added: 0, updated: 0, months: 0 };
-  }
+  saveLectureRows(lectureRows);
+  renderLectureSummary(lectureRows);
+  const billableMonths = monthly.filter((item) => item.billing > 0);
   const importName = lectureImportName.value.trim() || activeUser.name;
   let added = 0;
   let updated = 0;
 
-  for (const item of monthly) {
+  for (const item of billableMonths) {
     const amount = item.billing;
     const existing = records.find((record) => record.month === item.month && record.source === "Lecture sheet");
     const record = calculateRecord({
@@ -694,7 +742,7 @@ function importLectureRows(lectureRows) {
 
   saveRecords();
   render();
-  return { added, updated, months: aggregateLectureMonths(lectureRows).length };
+  return { added, updated, months: monthly.length, rows: lectureRows.length, billableMonths: billableMonths.length };
 }
 
 function defaultFilingDueDate(monthText) {
@@ -845,6 +893,7 @@ function showApp(user) {
   loginView.hidden = true;
   appView.hidden = false;
   render();
+  renderLectureSummary();
   verifySaved(activeUser.id, records.length);
   window.setTimeout(syncLectureSheet, 250);
 }
@@ -1141,8 +1190,10 @@ async function syncLectureSheet() {
     const lectureRows = await loadLectureSheet(config.url, config.sheetName);
     const result = importLectureRows(lectureRows);
     if (result.months > 0) {
-      lectureSheetStatus.textContent = `Synced ${config.label}: imported ${result.added}, updated ${result.updated}.`;
-      lectureSheetStatus.className = "save-status ok";
+      lectureSheetStatus.textContent = result.billableMonths > 0
+        ? `Synced ${config.label}: ${result.rows} rows, imported ${result.added}, updated ${result.updated}.`
+        : `Synced ${config.label}: ${result.rows} rows. No billing amount column found, so GST records were not changed.`;
+      lectureSheetStatus.className = result.billableMonths > 0 ? "save-status ok" : "save-status";
     }
   } catch (error) {
     lectureSheetStatus.textContent = `Sync failed: ${error.message}`;
@@ -1158,8 +1209,10 @@ function importLectureCsvPaste() {
   const lectureRows = lectureRecordsFromSheetText(lectureCsvPaste.value);
   const result = importLectureRows(lectureRows);
   if (result.months > 0) {
-    lectureSheetStatus.textContent = `Imported ${result.added}, updated ${result.updated} monthly record(s) from pasted CSV.`;
-    lectureSheetStatus.className = "save-status ok";
+    lectureSheetStatus.textContent = result.billableMonths > 0
+      ? `Imported ${result.added}, updated ${result.updated} monthly record(s) from pasted rows.`
+      : `Synced ${result.rows} pasted row(s). No billing amount column found, so GST records were not changed.`;
+    lectureSheetStatus.className = result.billableMonths > 0 ? "save-status ok" : "save-status";
   }
 }
 

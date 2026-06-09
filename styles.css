@@ -348,6 +348,35 @@ button.danger {
   grid-column: 1 / -1;
 }
 
+.lecture-summary {
+  margin-top: 14px;
+}
+
+.mini-table {
+  width: min(560px, 100%);
+  border-collapse: collapse;
+  border: 1px solid #d8e2ea;
+  background: #ffffff;
+}
+
+.mini-table th,
+.mini-table td {
+  border: 1px solid #d8e2ea;
+  padding: 7px 8px;
+  font-size: 13px;
+}
+
+.mini-table th {
+  background: #eef5f7;
+  color: var(--teal-dark);
+  text-align: center;
+}
+
+.empty-note {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .metric {
   padding: 16px;
 }

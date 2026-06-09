@@ -391,8 +391,8 @@ button.danger {
 .sheet-table td {
   border: 1px solid #d8e2ea;
   padding: 6px 8px;
-  min-width: 96px;
-  max-width: 260px;
+  min-width: 92px;
+  max-width: 280px;
   height: 32px;
   font-size: 12px;
   white-space: nowrap;
@@ -413,6 +413,13 @@ button.danger {
 
 .sheet-table .sheet-header-row th {
   background: #dff3f7;
+}
+
+.sheet-table .wide-cell {
+  min-width: 280px;
+  max-width: 520px;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .empty-note {

@@ -65,12 +65,8 @@ const restoreBackupButton = document.querySelector("#restoreBackup");
 const restoreFile = document.querySelector("#restoreFile");
 const saveStatus = document.querySelector("#saveStatus");
 const lectureSheetInfo = document.querySelector("#lectureSheetInfo");
-const lectureImportName = document.querySelector("#lectureImportName");
-const lectureCsvPaste = document.querySelector("#lectureCsvPaste");
 const syncLectureSheetButton = document.querySelector("#syncLectureSheet");
-const importLectureCsvButton = document.querySelector("#importLectureCsv");
 const lectureSheetStatus = document.querySelector("#lectureSheetStatus");
-const lectureSummary = document.querySelector("#lectureSummary");
 const lectureSheetTable = document.querySelector("#lectureSheetTable");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll(".tab-panel");
@@ -461,6 +457,52 @@ function tableRowsFromGviz(table) {
   ];
 }
 
+function firstFilled(values) {
+  for (const value of values) {
+    const clean = String(value ?? "").trim();
+    if (clean) return clean;
+  }
+  return "";
+}
+
+function formatTimePair(hour, minute) {
+  const hourNumber = toNumber(hour);
+  const minuteNumber = toNumber(minute);
+  if (!hourNumber && !minuteNumber && String(hour ?? "").trim() === "" && String(minute ?? "").trim() === "") return "";
+  return `${String(hourNumber).padStart(2, "0")}:${String(minuteNumber).padStart(2, "0")}`;
+}
+
+function rowHasLectureDetail(row) {
+  return row.some((cellValue) => String(cellValue ?? "").trim() !== "") && normalizeLectureDate(row[2]);
+}
+
+function lectureRegisterRows(tableRows) {
+  return tableRows
+    .filter(rowHasLectureDetail)
+    .map((row) => ({
+      entryDate: row[0] || "",
+      lectureDate: row[2] || "",
+      batch: firstFilled([row[5], row[20]]),
+      level: row[7] || "",
+      timeInHour: row[11] || "",
+      timeInMinute: row[12] || "",
+      timeOutHour: row[13] || "",
+      timeOutMinute: row[14] || "",
+      timeIn: formatTimePair(row[11], row[12]),
+      timeOut: formatTimePair(row[13], row[14]),
+      netHours: row[15] || "",
+      netMinutes: row[16] || "",
+      subject: firstFilled([row[6], row[20], row[21], row[22], row[23]]),
+      topic: firstFilled(row.slice(24, 48)),
+      status: row[10] || "",
+      mode: row[17] || "",
+      attempt: row[18] || "",
+      location: firstFilled([row[19], row[48]]),
+      actualLocation: row[48] || "",
+      email: row[50] || "",
+    }));
+}
+
 function loadGvizUrl(scriptUrl, callbackName) {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
@@ -525,7 +567,6 @@ async function loadLectureSheet(url, sheetName, gid) {
       const text = await response.text();
       const tableRows = parseCsv(text);
       const records = lectureRecordsFromSheetText(text);
-      if (!records.length) throw new Error("No usable lecture rows found in CSV response.");
       saveLectureTable(tableRows);
       renderLectureTable(tableRows);
       return records;
@@ -535,15 +576,8 @@ async function loadLectureSheet(url, sheetName, gid) {
   }
 }
 
-function pastedSheetUrl() {
-  const text = lectureCsvPaste.value.trim();
-  return text.match(/https:\/\/docs\.google\.com\/spreadsheets\/d\/[^\s"']+/)?.[0] || "";
-}
-
 function lectureSyncSource() {
-  const pasted = pastedSheetUrl();
   const config = LECTURE_SHEETS[activeUser.id];
-  if (pasted) return { url: pasted, sheetName: config.sheetName, gid: config.gid, label: `pasted link/${config.sheetName}` };
   return { ...config, label: `${activeUser.id}/${config.sheetName}` };
 }
 
@@ -745,88 +779,66 @@ function loadLectureTable() {
 
 function renderLectureTable(tableRows = loadLectureTable()) {
   if (!tableRows.length) {
-    lectureSheetTable.innerHTML = "";
+    lectureSheetTable.innerHTML = `<tbody><tr><td class="empty-note">No lecture records synced yet.</td></tr></tbody>`;
     return;
   }
-  const maxCols = Math.max(...tableRows.map((row) => row.length));
-  const normalizedRows = tableRows.map((row) => Array.from({ length: maxCols }, (_, index) => row[index] ?? ""));
-  const headerIndex = normalizedRows.findIndex(rowLooksLikeLectureHeader);
-  lectureSheetTable.innerHTML = normalizedRows.map((row, rowIndex) => {
-    const tag = rowIndex === headerIndex ? "th" : "td";
-    return `
-      <tr class="${rowIndex === headerIndex ? "sheet-header-row" : ""}">
-        ${row.map((cellValue) => `<${tag}>${escapeCell(cellValue)}</${tag}>`).join("")}
+  const rows = lectureRegisterRows(tableRows);
+  if (!rows.length) {
+    lectureSheetTable.innerHTML = `<tbody><tr><td class="empty-note">No lecture records found in the synced sheet.</td></tr></tbody>`;
+    return;
+  }
+  lectureSheetTable.innerHTML = `
+    <thead>
+      <tr>
+        <th>Date of Entry</th>
+        <th>Date of Lecture</th>
+        <th>Batch</th>
+        <th>Level</th>
+        <th>Time In Hr</th>
+        <th>Time In Min</th>
+        <th>Time Out Hr</th>
+        <th>Time Out Min</th>
+        <th>Time In</th>
+        <th>Time Out</th>
+        <th>Net Hr</th>
+        <th>Net Min</th>
+        <th>Subject Taught</th>
+        <th>Topic Taught</th>
+        <th>Status</th>
+        <th>Mode</th>
+        <th>Attempt</th>
+        <th>Location</th>
+        <th>Actual Location</th>
+        <th>Email</th>
       </tr>
-    `;
-  }).join("");
-}
-
-function renderLectureSummary(lectureRows = loadLectureRows()) {
-  const monthly = aggregateLectureMonths(lectureRows)
-    .sort((a, b) => new Date(b.month.replaceAll("-", " ")) - new Date(a.month.replaceAll("-", " ")));
-  if (!monthly.length) {
-    lectureSummary.innerHTML = `<p class="empty-note">No lecture rows synced yet.</p>`;
-    return;
-  }
-  lectureSummary.innerHTML = `
-    <table class="mini-table">
-      <thead>
+    </thead>
+    <tbody>
+      ${rows.map((row) => `
         <tr>
-          <th>Month</th>
-          <th>Hours</th>
-          <th>Billing in Sheet</th>
+          <td>${escapeCell(row.entryDate)}</td>
+          <td>${escapeCell(row.lectureDate)}</td>
+          <td>${escapeCell(row.batch)}</td>
+          <td>${escapeCell(row.level)}</td>
+          <td class="num">${escapeCell(row.timeInHour)}</td>
+          <td class="num">${escapeCell(row.timeInMinute)}</td>
+          <td class="num">${escapeCell(row.timeOutHour)}</td>
+          <td class="num">${escapeCell(row.timeOutMinute)}</td>
+          <td>${escapeCell(row.timeIn)}</td>
+          <td>${escapeCell(row.timeOut)}</td>
+          <td class="num">${escapeCell(row.netHours)}</td>
+          <td class="num">${escapeCell(row.netMinutes)}</td>
+          <td>${escapeCell(row.subject)}</td>
+          <td class="wide-cell">${escapeCell(row.topic)}</td>
+          <td>${escapeCell(row.status)}</td>
+          <td>${escapeCell(row.mode)}</td>
+          <td>${escapeCell(row.attempt)}</td>
+          <td>${escapeCell(row.location)}</td>
+          <td>${escapeCell(row.actualLocation)}</td>
+          <td>${escapeCell(row.email)}</td>
         </tr>
-      </thead>
-      <tbody>
-        ${monthly.map((item) => `
-          <tr>
-            <td>${item.month}</td>
-            <td class="num">${formatHours(item.hours)}</td>
-            <td class="num">${formatMoney(item.billing)}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
+      `).join("")}
+    </tbody>
   `;
-}
-
-function importLectureRows(lectureRows) {
-  const monthly = aggregateLectureMonths(lectureRows);
-  saveLectureRows(lectureRows);
-  renderLectureSummary(lectureRows);
-  const billableMonths = monthly.filter((item) => item.billing > 0);
-  const importName = lectureImportName.value.trim() || activeUser.name;
-  let added = 0;
-  let updated = 0;
-
-  for (const item of billableMonths) {
-    const amount = item.billing;
-    const existing = records.find((record) => record.month === item.month && record.source === "Lecture sheet");
-    const record = calculateRecord({
-      id: existing?.id || crypto.randomUUID(),
-      month: item.month,
-      name: importName,
-      hours: item.hours,
-      source: "Forward",
-      amount,
-      status: existing?.status || "Unpaid",
-      filingForm: existing?.filingForm || "GSTR-3B",
-      filingDueDate: existing?.filingDueDate || defaultFilingDueDate(item.month),
-      createdAt: existing?.createdAt || new Date().toISOString(),
-    });
-    record.source = "Lecture sheet";
-    if (existing) {
-      records = records.map((stored) => stored.id === existing.id ? record : stored);
-      updated += 1;
-    } else {
-      records.push(record);
-      added += 1;
-    }
-  }
-
-  saveRecords();
-  render();
-  return { added, updated, months: monthly.length, rows: lectureRows.length, billableMonths: billableMonths.length };
 }
 
 function defaultFilingDueDate(monthText) {
@@ -969,15 +981,13 @@ function showApp(user) {
   activeUser = user;
   sessionStorage.setItem(SESSION_KEY, user.id);
   records = loadRecords();
-  lectureImportName.value = user.name;
   const config = LECTURE_SHEETS[user.id];
-  lectureSheetInfo.textContent = `Fixed sheet for ${user.id}: ${config.sheetName}. Auto-sync runs after login and reads billing/fees/amount from the sheet.`;
+  lectureSheetInfo.textContent = `Fixed sheet for ${user.id}. Auto-sync runs after login and keeps lecture records row-wise.`;
   lectureSheetStatus.textContent = "Auto-sync starting...";
   lectureSheetStatus.className = "save-status";
   loginView.hidden = true;
   appView.hidden = false;
   render();
-  renderLectureSummary();
   renderLectureTable();
   verifySaved(activeUser.id, records.length);
   window.setTimeout(syncLectureSheet, 250);
@@ -1287,34 +1297,13 @@ async function syncLectureSheet() {
   try {
     const config = lectureSyncSource();
     const lectureRows = await loadLectureSheet(config.url, config.sheetName, config.gid);
-    const result = importLectureRows(lectureRows);
-    if (result.months > 0) {
-      lectureSheetStatus.textContent = result.billableMonths > 0
-        ? `Synced ${config.label}: ${result.rows} rows, imported ${result.added}, updated ${result.updated}.`
-        : `Synced ${config.label}: ${result.rows} rows. No billing amount column found, so GST records were not changed.`;
-      lectureSheetStatus.className = result.billableMonths > 0 ? "save-status ok" : "save-status";
-    }
+    saveLectureRows(lectureRows);
+    const rowCount = lectureRegisterRows(loadLectureTable()).length;
+    lectureSheetStatus.textContent = `Synced ${config.label}: ${rowCount} lecture record(s).`;
+    lectureSheetStatus.className = "save-status ok";
   } catch (error) {
     lectureSheetStatus.textContent = `Sync failed: ${error.message}`;
     lectureSheetStatus.className = "save-status error";
-  }
-}
-
-function importLectureCsvPaste() {
-  if (pastedSheetUrl()) {
-    syncLectureSheet();
-    return;
-  }
-  const tableRows = parseCsv(lectureCsvPaste.value);
-  saveLectureTable(tableRows);
-  renderLectureTable(tableRows);
-  const lectureRows = lectureRecordsFromSheetText(lectureCsvPaste.value);
-  const result = importLectureRows(lectureRows);
-  if (result.months > 0) {
-    lectureSheetStatus.textContent = result.billableMonths > 0
-      ? `Imported ${result.added}, updated ${result.updated} monthly record(s) from pasted rows.`
-      : `Synced ${result.rows} pasted row(s). No billing amount column found, so GST records were not changed.`;
-    lectureSheetStatus.className = result.billableMonths > 0 ? "save-status ok" : "save-status";
   }
 }
 
@@ -1339,7 +1328,6 @@ restoreFile.addEventListener("change", () => {
   if (file) restoreBackupFile(file);
 });
 syncLectureSheetButton.addEventListener("click", syncLectureSheet);
-importLectureCsvButton.addEventListener("click", importLectureCsvPaste);
 recordsBody.addEventListener("change", (event) => {
   const id = event.target.dataset.id;
   if (event.target.dataset.action === "status") {

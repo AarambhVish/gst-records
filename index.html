@@ -32,7 +32,7 @@
         </div>
         <nav class="tabbar" aria-label="GST app sections">
           <button class="tab-button active" type="button" data-tab="records">GST Records</button>
-          <button class="tab-button" type="button" data-tab="lecture">Lecture Sync</button>
+          <button class="tab-button" type="button" data-tab="lecture">Lecture Records</button>
         </nav>
       </section>
 
@@ -112,26 +112,14 @@
       <section class="entry-panel sheet-import-panel">
         <div class="panel-head">
           <div>
-            <h2>Lecture Sheet Import</h2>
-            <p id="lectureSheetInfo">Sync lecture hours from the fixed Google Form response sheet for this login.</p>
+            <h2>Lecture Records</h2>
+            <p id="lectureSheetInfo">Row-wise lecture records from the fixed Google Sheet for this login.</p>
           </div>
         </div>
-        <div class="sheet-import-grid">
-          <label>
-            <span>Import name</span>
-            <input id="lectureImportName" placeholder="Defaults to login profile">
-          </label>
-          <label class="wide">
-            <span>Paste Google Sheet link or copied rows</span>
-            <textarea id="lectureCsvPaste" rows="4" placeholder="Optional: paste a Google Sheet link to sync that sheet, or paste copied rows with the header row included."></textarea>
-          </label>
-        </div>
         <div class="actions">
-          <button id="syncLectureSheet" type="button">Sync Lecture Sheet</button>
-          <button id="importLectureCsv" type="button">Use Pasted Link / Rows</button>
+          <button id="syncLectureSheet" type="button">Sync Records</button>
           <span class="save-status" id="lectureSheetStatus">Ready</span>
         </div>
-        <div class="lecture-summary" id="lectureSummary"></div>
         <div class="sheet-table-wrap" id="lectureSheetTableWrap">
           <table class="sheet-table" id="lectureSheetTable"></table>
         </div>
